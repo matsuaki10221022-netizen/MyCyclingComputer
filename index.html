@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Cycling Computer</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        background: #111;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+    }
+
+    .app {
+        max-width: 700px;
+        margin: auto;
+        padding: 20px;
+    }
+
+    .status {
+        display: flex;
+        justify-content: space-between;
+        font-size: 16px;
+        color: #aaa;
+        margin-bottom: 20px;
+    }
+
+    .speed {
+        font-size: 100px;
+        font-weight: bold;
+        line-height: 1;
+        margin-top: 20px;
+    }
+
+    .unit {
+        font-size: 25px;
+        color: #aaa;
+        margin-bottom: 30px;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .card {
+        background: #222;
+        border-radius: 15px;
+        padding: 18px;
+    }
+
+    .label {
+        color: #888;
+        font-size: 14px;
+        margin-bottom: 8px;
+    }
+
+    .value {
+        font-size: 32px;
+        font-weight: bold;
+    }
+
+    button {
+        margin-top: 25px;
+        padding: 15px 30px;
+        font-size: 20px;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+    }
+
+    #start {
+        background: #1e90ff;
+        color: white;
+    }
+
+    #reset {
+        background: #444;
+        color: white;
+        margin-left: 10px;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+    <div class="status">
+        <span id="gps">GPS: OFF</span>
+        <span id="battery">Battery: --</span>
+    </div>
+
+    <div class="speed" id="speed">0.0</div>
+    <div class="unit">km/h</div>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="label">DISTANCE</div>
+            <div class="value" id="distance">0.00 km</div>
+        </div>
+
+        <div class="card">
+            <div class="label">TIME</div>
+            <div class="value" id="time">00:00:00</div>
+        </div>
+
+        <div class="card">
+            <div class="label">AVG SPEED</div>
+            <div class="value" id="avg">0.0 km/h</div>
+        </div>
+
+        <div class="card">
+            <div class="label">MAX SPEED</div>
+            <div class="value" id="max">0.0 km/h</div>
+        </div>
+
+    </div>
+
+    <button id="start">START</button>
+    <button id="reset">RESET</button>
+
+</div>
+
+<script>
+
+let watchID = null;
+
+let running = false;
+
+let startTime = 0;
+let elapsed = 0;
+
+let lastPosition = null;
+let distance = 0;
+
+let maxSpeed = 0;
+
+let timer = null;
+
+
+// START / PAUSE
+document.getElementById("start").onclick = function() {
+
+    if (!running) {
+
+        running = true;
+
+        document.getElementById("start").textContent = "PAUSE";
+
+        startTime = Date.now() - elapsed;
+
+        timer = setInterval(updateTime, 1000);
+
+        startGPS();
+
+    } else {
+
+        running = false;
+
+        document.getElementById("start").textContent = "START";
+
+        clearInterval(timer);
+
+        if (watchID !== null) {
+            navigator.geolocation.clearWatch(watchID);
+        }
+    }
+};
+
+
+// GPS開始
+function startGPS() {
+
+    if (!navigator.geolocation) {
+
+        alert("この端末はGPSに対応していません。");
+
+        return;
+    }
+
+    watchID = navigator.geolocation.watchPosition(
+
+        function(position) {
+
+            document.getElementById("gps").textContent = "GPS: OK";
+
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            let speed = position.coords.speed;
+
+            if (speed !== null && !isNaN(speed)) {
+
+                speed = speed * 3.6;
+
+            } else {
+
+                speed = 0;
+
+            }
+
+            document.getElementById("speed").textContent =
+                speed.toFixed(1);
+
+
+            if (speed > maxSpeed) {
+
+                maxSpeed = speed;
+
+                document.getElementById("max").textContent =
+                    maxSpeed.toFixed(1) + " km/h";
+
+            }
+
+
+            // 距離計算
+
+            if (lastPosition !== null) {
+
+                const d = calcDistance(
+                    lastPosition.lat,
+                    lastPosition.lon,
+                    lat,
+                    lon
+                );
+
+                distance += d;
+
+                document.getElementById("distance").textContent =
+                    distance.toFixed(2) + " km";
+            }
+
+
+            lastPosition = {
+                lat: lat,
+                lon: lon
+            };
+
+            updateAverage();
+
+        },
+
+        function(error) {
+
+            document.getElementById("gps").textContent =
+                "GPS: ERROR";
+
+            console.log(error);
+
+        },
+
+        {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 5000
+        }
+    );
+}
+
+
+// 距離計算
+function calcDistance(lat1, lon1, lat2, lon2) {
+
+    const R = 6371;
+
+    const dLat =
+        (lat2 - lat1) * Math.PI / 180;
+
+    const dLon =
+        (lon2 - lon1) * Math.PI / 180;
+
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
+
+    const c =
+        2 * Math.atan2(
+            Math.sqrt(a),
+            Math.sqrt(1 - a)
+        );
+
+    return R * c;
+}
+
+
+// 時間
+function updateTime() {
+
+    elapsed = Date.now() - startTime;
+
+    const totalSeconds =
+        Math.floor(elapsed / 1000);
+
+    const hours =
+        Math.floor(totalSeconds / 3600);
+
+    const minutes =
+        Math.floor((totalSeconds % 3600) / 60);
+
+    const seconds =
+        totalSeconds % 60;
+
+    document.getElementById("time").textContent =
+
+        String(hours).padStart(2, "0") + ":" +
+
+        String(minutes).padStart(2, "0") + ":" +
+
+        String(seconds).padStart(2, "0");
+
+}
+
+
+// 平均速度
+function updateAverage() {
+
+    if (elapsed <= 0) return;
+
+    const hours = elapsed / 3600000;
+
+    const avg = distance / hours;
+
+    if (isFinite(avg)) {
+
+        document.getElementById("avg").textContent =
+            avg.toFixed(1) + " km/h";
+
+    }
+}
+
+
+// RESET
+document.getElementById("reset").onclick = function() {
+
+    running = false;
+
+    clearInterval(timer);
+
+    if (watchID !== null) {
+        navigator.geolocation.clearWatch(watchID);
+    }
+
+    startTime = 0;
+    elapsed = 0;
+
+    lastPosition = null;
+
+    distance = 0;
+    maxSpeed = 0;
+
+    document.getElementById("speed").textContent = "0.0";
+    document.getElementById("distance").textContent = "0.00 km";
+    document.getElementById("time").textContent = "00:00:00";
+    document.getElementById("avg").textContent = "0.0 km/h";
+    document.getElementById("max").textContent = "0.0 km/h";
+
+    document.getElementById("start").textContent = "START";
+    document.getElementById("gps").textContent = "GPS: OFF";
+};
+
+</script>
+
+</body>
+</html>
